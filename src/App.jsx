@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { auth } from "./firebase";
 import { 
   MapPin, Moon, Sun, Search, X, Save, Trash2, Shield, User, Info, 
   Map as MapIcon, Loader2, Navigation, PhoneCall, Plus, Menu, Eye, 
@@ -8,17 +7,6 @@ import {
 import "./index.css";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
-import { db } from "./firebase";
-// 1. Firebase Configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBq_1YKH4Hf4M65qMHirvWCD_-tyqCDz5E",
-  authDomain: "ramit-7e364.firebaseapp.com",
-  projectId: "ramit-7e364",
-  storageBucket: "ramit-7e364.firebasestorage.app",
-  messagingSenderId: "1036691345731",
-  appId: "1:1036691345731:web:df8121852c6137e3b35ff6",
-  measurementId: "G-99Y1VSYHJG"
-};
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-map-app-kh'; 
