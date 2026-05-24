@@ -4,7 +4,7 @@ import {
   Map as MapIcon, Loader2, Navigation, PhoneCall, Plus, Menu, Eye, 
   EyeOff, AlertCircle 
 } from 'lucide-react';
-
+import '@index.css';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
