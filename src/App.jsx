@@ -4,6 +4,7 @@ import {
   Map as MapIcon, Loader2, Navigation, PhoneCall, Plus, Menu, Eye, 
   EyeOff, AlertCircle 
 } from 'lucide-react';
+import "./index.css";
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
@@ -140,14 +141,16 @@ export default function App() {
   const fetchNearbyPOIs = async (lat, lng) => {
       setIsFetchingPois(true);
       try {
+          // Changed query to search within a radius (e.g., 5000 meters) around current location
+          // Included more specific tags for the types of POIs you mentioned
           const query = `
               [out:json][timeout:25];
               (
-                node["amenity"~"school|kindergarten"](around:5000,${lat},${lng});
-                node["amenity"~"hospital|clinic|doctors"](around:5000,${lat},${lng});
-                node["amenity"="police"](around:5000,${lat},${lng});
-                node["office"="government"](around:5000,${lat},${lng});
-                node["place"~"village|townhall"](around:5000,${lat},${lng});
+                node["amenity"~"school|kindergarten|college|university"](around:5000,${lat},${lng});
+                node["amenity"~"hospital|clinic|doctors|pharmacy"](around:5000,${lat},${lng});
+                node["amenity"~"police|fire_station"](around:5000,${lat},${lng});
+                node["office"~"government|administrative"](around:5000,${lat},${lng});
+                node["place"~"village|townhall|hamlet"](around:5000,${lat},${lng});
               );
               out body;
           `;
@@ -160,11 +163,11 @@ export default function App() {
                   let type = "ទីតាំងផ្សេងៗ";
                   let amenity = el.tags.amenity || el.tags.office || el.tags.place;
                   
-                  if (amenity === 'school' || amenity === 'kindergarten') type = "សាលារៀន";
-                  else if (amenity === 'hospital' || amenity === 'clinic' || amenity === 'doctors') type = "មន្ទីរពេទ្យ / គ្លីនិក";
-                  else if (amenity === 'police') type = "ប៉ុស្តិ៍ប៉ូលីស";
-                  else if (amenity === 'government' || amenity === 'townhall') type = "សាលាឃុំ / ផ្ទះមេភូមិ";
-                  else if (amenity === 'village') type = "ភូមិ / សហគមន៍";
+                  if (amenity === 'school' || amenity === 'kindergarten' || amenity === 'college' || amenity === 'university') type = "សាលារៀន";
+                  else if (amenity === 'hospital' || amenity === 'clinic' || amenity === 'doctors' || amenity === 'pharmacy') type = "មន្ទីរពេទ្យ / គ្លីនិក";
+                  else if (amenity === 'police' || amenity === 'fire_station') type = "ប៉ុស្តិ៍ប៉ូលីស";
+                  else if (amenity === 'government' || amenity === 'townhall' || amenity === 'administrative') type = "សាលាឃុំ / ផ្ទះមេភូមិ";
+                  else if (amenity === 'village' || amenity === 'hamlet') type = "ភូមិ / សហគមន៍";
 
                   return {
                       id: `osm-${el.id}`,
@@ -176,7 +179,22 @@ export default function App() {
                       keywords: [el.tags.name, type] // Generate basic keywords
                   };
               });
-              setOsmLocations(formattedPOIs);
+              
+              // Only add new POIs that we don't already have
+              setOsmLocations(prevOsm => {
+                  const newOsmLocations = [...prevOsm];
+                  formattedPOIs.forEach(newPoi => {
+                      // Check if a POI with very similar coordinates already exists to avoid duplicates
+                      const exists = newOsmLocations.some(existingPoi => 
+                          Math.abs(existingPoi.lat - newPoi.lat) < 0.0001 && 
+                          Math.abs(existingPoi.lng - newPoi.lng) < 0.0001
+                      );
+                      if (!exists) {
+                          newOsmLocations.push(newPoi);
+                      }
+                  });
+                  return newOsmLocations;
+              });
           }
       } catch (error) {
           console.error("Failed to fetch nearby POIs", error);
@@ -233,6 +251,8 @@ export default function App() {
              initialMap.setCenter(userPos);
              initialMap.setZoom(16);
              isMapCenteredRef.current = true;
+             // Initial fetch when map centers for the first time
+             fetchNearbyPOIs(lat, lng);
           }
           
           if (userMarkerRef.current) {
@@ -255,7 +275,8 @@ export default function App() {
           }
 
           setLastFetchedPos(prev => {
-              if (!prev || calculateDistance(prev.lat, prev.lng, lat, lng) > 0.3) {
+              // Fetch again if user moved more than 1km (1000 meters)
+              if (!prev || calculateDistance(prev.lat, prev.lng, lat, lng) > 1.0) {
                   fetchNearbyPOIs(lat, lng);
                   return userPos;
               }
@@ -338,12 +359,15 @@ export default function App() {
   }, [isDarkMode, map]);
 
   const allLocationsForMap = useMemo(() => {
+      // 1. Filter out OSM locations that are too close to Firebase (Admin) locations
       const filteredOsm = osmLocations.filter(osmLoc => {
           const isTooClose = firebaseLocations.some(fbLoc => 
-              calculateDistance(osmLoc.lat, osmLoc.lng, fbLoc.lat, fbLoc.lng) < 0.1 
+              calculateDistance(osmLoc.lat, osmLoc.lng, fbLoc.lat, fbLoc.lng) < 0.05 // 50 meters
           );
           return !isTooClose;
       });
+
+      // 2. Combine Admin data and filtered OSM data
       return [...firebaseLocations, ...filteredOsm];
   }, [firebaseLocations, osmLocations]);
 
@@ -392,7 +416,7 @@ export default function App() {
       });
 
       // ប្រើ Filter តាមការណែនាំរបស់អ្នក
-      const result = mappedLocs.filter(item => {
+      let result = mappedLocs.filter(item => {
           const query = searchQuery.toLowerCase().trim();
           if (!query) return true;
           return item.keywords.some(k => 
@@ -400,7 +424,9 @@ export default function App() {
           );
       });
 
+      // Sort primarily by distance if user location is available
       return result.sort((a, b) => {
+          if (a.distance === null && b.distance === null) return 0;
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
@@ -698,6 +724,11 @@ export default function App() {
                              <p className="text-[13px] text-gray-700 dark:text-gray-300 font-medium flex items-center gap-1">
                                 📞 លេខទូរស័ព្ទ: <span className="font-bold text-blue-600 dark:text-blue-400">{loc.phone}</span>
                              </p>
+                             <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                 <a href={`tel:${loc.phone}`} className="inline-flex items-center justify-center gap-1.5 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold transition-colors">
+                                     <PhoneCall className="w-4 h-4" /> ខលឥឡូវនេះ
+                                 </a>
+                             </div>
                           </div>
                       ) : (
                           <div className="mt-2 flex items-center gap-1.5">
