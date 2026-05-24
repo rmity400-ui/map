@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { auth } from "./firebase";
 import { 
   MapPin, Moon, Sun, Search, X, Save, Trash2, Shield, User, Info, 
   Map as MapIcon, Loader2, Navigation, PhoneCall, Plus, Menu, Eye, 
