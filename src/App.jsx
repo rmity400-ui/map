@@ -8,7 +8,6 @@ import "./index.css";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-map-app-kh'; 
 
 // ចម្ងាយ (Distance Calculator)
