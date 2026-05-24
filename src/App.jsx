@@ -4,7 +4,6 @@ import {
   Map as MapIcon, Loader2, Navigation, PhoneCall, Plus, Menu, Eye, 
   EyeOff, AlertCircle 
 } from 'lucide-react';
-import "./index.css";
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
@@ -65,20 +64,18 @@ export default function App() {
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'សាលារៀន / នាយកសាលា' });
   const [isAutoLocating, setIsAutoLocating] = useState(false);
   
-  // បន្ថែម State សម្រាប់ប្រព័ន្ធស្វែងរកពិភពលោក (Global Search)
-  const [searchResults, setSearchResults] = useState([]); 
-  const [isSearching, setIsSearching] = useState(false); 
-  const [searchLoading, setSearchLoading] = useState(false); 
-  const searchTimeoutRef = useRef(null); 
-  const searchDropdownRef = useRef(null); 
-
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   const mapRef = useRef(null);
   const infoWindowRef = useRef(null);
   const userMarkerRef = useRef(null);
+  const tempMarkerRef = useRef(null);
   const isMapCenteredRef = useRef(false);
   const watchIdRef = useRef(null);
+  
+  // Ref សម្រាប់ Google Places Autocomplete
+  const searchInputRef = useRef(null);
+  const autocompleteRef = useRef(null);
 
   useEffect(() => {
     document.title = "📍 SmartMap";
@@ -112,7 +109,7 @@ export default function App() {
   useEffect(() => {
     if (!authUser) return;
     
-    // Listen to Firebase Collection "ramit"
+    // បង្កើត Collection ឈ្មោះ "ramit" ក្នុង Firebase ដើម្បីរក្សាទុកទិន្នន័យ
     const locRef = collection(db, 'artifacts', appId, 'public', 'data', 'ramit');
     const unsub = onSnapshot(locRef, (snapshot) => {
       const locList = [];
@@ -143,7 +140,6 @@ export default function App() {
   const fetchNearbyPOIs = async (lat, lng) => {
       setIsFetchingPois(true);
       try {
-          // Query Overpass within 5km
           const query = `
               [out:json][timeout:25];
               (
@@ -176,7 +172,8 @@ export default function App() {
                       type: type,
                       lat: el.lat,
                       lng: el.lon,
-                      isAdminData: false 
+                      isAdminData: false,
+                      keywords: [el.tags.name, type] // Generate basic keywords
                   };
               });
               setOsmLocations(formattedPOIs);
@@ -192,7 +189,8 @@ export default function App() {
     if (!document.getElementById('google-maps-script')) {
       const script = document.createElement('script');
       script.id = 'google-maps-script';
-      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyDcelrKRrV4GaPKftfT29JzuFsOuLk5CO8`;
+      // បន្ថែម libraries=places សម្រាប់ Autocomplete
+      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCYPYMqUNC3FYAuDoTBiJtCCzjZtQd7oCg&libraries=places`;
       script.async = true;
       script.defer = true;
       script.onload = initializeMap;
@@ -202,7 +200,6 @@ export default function App() {
     }
 
     return () => {
-        // Cleanup GPS Watcher on unmount
         if (watchIdRef.current && navigator.geolocation) {
             navigator.geolocation.clearWatch(watchIdRef.current);
         }
@@ -236,8 +233,6 @@ export default function App() {
              initialMap.setCenter(userPos);
              initialMap.setZoom(16);
              isMapCenteredRef.current = true;
-          } else {
-             initialMap.panTo(userPos);
           }
           
           if (userMarkerRef.current) {
@@ -259,7 +254,6 @@ export default function App() {
               });
           }
 
-          // Fetch external POIs if moved more than 300 meters
           setLastFetchedPos(prev => {
               if (!prev || calculateDistance(prev.lat, prev.lng, lat, lng) > 0.3) {
                   fetchNearbyPOIs(lat, lng);
@@ -278,13 +272,71 @@ export default function App() {
     setMap(initialMap);
   };
 
+  // --- Google Maps Places Autocomplete Integration ---
+  useEffect(() => {
+      if (map && window.google && window.google.maps.places && searchInputRef.current && !autocompleteRef.current) {
+          
+          // Enhanced Autocomplete: Worldwide support, fuzzy matching, intelligent suggestions
+          autocompleteRef.current = new window.google.maps.places.Autocomplete(searchInputRef.current, {
+              fields: ["geometry", "name", "formatted_address"]
+              // Removed types and componentRestrictions to support villages, communes, and worldwide searches
+          });
+
+          const onPlaceSelected = (place) => {
+              if (place.geometry.viewport) {
+                  map.fitBounds(place.geometry.viewport);
+              } else {
+                  map.panTo(place.geometry.location);
+                  map.setZoom(16);
+              }
+
+              // ទម្លាក់ Pin ពណ៌ស្វាយជាបណ្ដោះអាសន្ន
+              if (tempMarkerRef.current) tempMarkerRef.current.setMap(null);
+              tempMarkerRef.current = new window.google.maps.Marker({
+                  position: place.geometry.location,
+                  map: map,
+                  icon: "http://maps.google.com/mapfiles/ms/icons/purple-dot.png",
+                  animation: window.google.maps.Animation.DROP,
+                  title: place.name || place.formatted_address
+              });
+              
+              setTimeout(() => {
+                  if (tempMarkerRef.current) tempMarkerRef.current.setMap(null);
+              }, 5000);
+
+              // ធ្វើបច្ចុប្បន្នភាព State សម្រាប់ Local Filter
+              if (searchInputRef.current) {
+                  setSearchQuery(searchInputRef.current.value);
+              }
+          };
+
+          autocompleteRef.current.addListener("place_changed", () => {
+              const place = autocompleteRef.current.getPlace();
+              
+              // Handle fuzzy search / Enter press without explicitly selecting from dropdown
+              if (!place.geometry || !place.geometry.location) {
+                  const geocoder = new window.google.maps.Geocoder();
+                  geocoder.geocode({ address: searchInputRef.current.value }, (results, status) => {
+                      if (status === 'OK' && results && results[0]) {
+                          onPlaceSelected(results[0]);
+                      } else {
+                          showToast("រកមិនឃើញទីតាំងនេះទេ", "error");
+                      }
+                  });
+                  return;
+              }
+
+              onPlaceSelected(place);
+          });
+      }
+  }, [map]);
+
   useEffect(() => {
     if (map && window.google && window.google.maps) {
       map.setOptions({ styles: isDarkMode ? darkMapStyle : [] });
     }
   }, [isDarkMode, map]);
 
-  // Merge Firebase + Auto Data (Exclude Auto duplicates if within 100m of Firebase data)
   const allLocationsForMap = useMemo(() => {
       const filteredOsm = osmLocations.filter(osmLoc => {
           const isTooClose = firebaseLocations.some(fbLoc => 
@@ -295,7 +347,6 @@ export default function App() {
       return [...firebaseLocations, ...filteredOsm];
   }, [firebaseLocations, osmLocations]);
 
-  // Sync Markers to Map
   useEffect(() => {
     if (!map || !window.google || !window.google.maps) return;
 
@@ -327,23 +378,29 @@ export default function App() {
     return () => newMarkers.forEach(m => m.marker?.setMap(null));
   }, [map, allLocationsForMap]);
 
-  // Distance Sort & Text Search filter
+  // --- Filtering Logic តាមការណែនាំរបស់អ្នក ---
   const filteredAndSortedLocations = useMemo(() => {
       if (!allLocationsForMap) return [];
       
       const mappedLocs = allLocationsForMap.map(loc => {
           let distance = null;
           if (userLocation) distance = calculateDistance(userLocation.lat, userLocation.lng, loc.lat, loc.lng);
-          return { ...loc, distance };
+          
+          // ធានាថាវាមាន keywords
+          const keywords = loc.keywords || [loc.name, loc.type, loc.phone].filter(Boolean);
+          return { ...loc, distance, keywords };
       });
 
-      const searched = mappedLocs.filter(loc => {
-         const query = searchQuery.toLowerCase().trim();
-         if (!query) return true;
-         return loc.name.toLowerCase().includes(query) || loc.type.toLowerCase().includes(query);
+      // ប្រើ Filter តាមការណែនាំរបស់អ្នក
+      const result = mappedLocs.filter(item => {
+          const query = searchQuery.toLowerCase().trim();
+          if (!query) return true;
+          return item.keywords.some(k => 
+              k && k.toLowerCase().includes(query)
+          );
       });
 
-      return searched.sort((a, b) => {
+      return result.sort((a, b) => {
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
@@ -355,102 +412,6 @@ export default function App() {
       if (dist < 1) return `${(dist * 1000).toFixed(0)} ម៉ែត្រ`;
       return `${dist.toFixed(1)} គ.ម`;
   };
-
-  const executeGlobalSearch = async (query) => {
-    if (!query) return;
-    setSearchLoading(true);
-    try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`);
-      const data = await response.json();
-      const mappedData = data.map(place => ({
-        id: place.place_id,
-        name: place.display_name,
-        lat: parseFloat(place.lat),
-        lng: parseFloat(place.lon),
-        boundingbox: place.boundingbox
-      }));
-      setSearchResults(mappedData);
-      setIsSearching(true);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  const handleSearchInput = (e) => {
-    const val = e.target.value;
-    setSearchQuery(val);
-    
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-
-    if (val.trim().length < 2) {
-      setIsSearching(false);
-      setSearchResults([]);
-      return;
-    }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      executeGlobalSearch(val.trim());
-    }, 600);
-  };
-
-  const handleSearchKeyDown = async (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (searchResults.length > 0) {
-        handleSelectSearchResult(searchResults[0]);
-      } else if (searchQuery.trim()) {
-        executeGlobalSearch(searchQuery.trim());
-      }
-    }
-  };
-
-  const handleSelectSearchResult = (result) => {
-    setSearchQuery(result.name.split(',')[0]); 
-    setIsSearching(false);
-    setSearchResults([]);
-    
-    if(map && window.google) {
-      if (result.boundingbox) {
-         const bounds = new window.google.maps.LatLngBounds(
-            { lat: parseFloat(result.boundingbox[0]), lng: parseFloat(result.boundingbox[2]) },
-            { lat: parseFloat(result.boundingbox[1]), lng: parseFloat(result.boundingbox[3]) }
-         );
-         map.fitBounds(bounds);
-      } else {
-         map.panTo({ lat: result.lat, lng: result.lng });
-         map.setZoom(16);
-      }
-      
-      const tempMarker = new window.google.maps.Marker({
-          position: { lat: result.lat, lng: result.lng },
-          map: map,
-          icon: "http://maps.google.com/mapfiles/ms/icons/purple-dot.png",
-          title: result.name,
-          animation: window.google.maps.Animation.DROP
-      });
-      
-      const tempInfoWindow = new window.google.maps.InfoWindow({
-         content: `<div class="p-2 text-sm font-bold">${result.name}</div>`
-      });
-      tempInfoWindow.open(map, tempMarker);
-
-      setTimeout(() => {
-          tempMarker.setMap(null);
-      }, 8000); 
-    }
-  };
-  
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-        if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
-            setIsSearching(false);
-        }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const focusLocation = (loc, markerObj = null) => {
     if (!map || !infoWindowRef.current || !window.google) return;
@@ -513,9 +474,17 @@ export default function App() {
     if (!authUser) return showToast("សូមរង់ចាំការភ្ជាប់ទៅកាន់ម៉ាស៊ីនមេសិន", "error");
     
     const newId = Date.now().toString();
-    const newLoc = { ...formData, lat: pendingLocation.lat, lng: pendingLocation.lng, createdAt: Date.now() };
+    const newLoc = { 
+        ...formData, 
+        lat: pendingLocation.lat, 
+        lng: pendingLocation.lng, 
+        createdAt: Date.now(),
+        // បង្កើត Keywords សម្រាប់ស្វែងរក (Search) ដូចការណែនាំ
+        keywords: [formData.name, formData.type, formData.phone]
+    };
 
     try {
+        // រក្សាទុកទិន្នន័យទៅកាន់ Collection ឈ្មោះ "ramit" ក្នុង Firebase 
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ramit', newId), newLoc);
         setShowAddModal(false);
         showToast("រក្សាទុកជោគជ័យ!", "success");
@@ -526,6 +495,7 @@ export default function App() {
 
   const handleDeleteLocation = async (locId) => {
      try {
+         // លុបទិន្នន័យពី Collection ឈ្មោះ "ramit"
          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ramit', locId));
          showToast("បានលុបទិន្នន័យជោគជ័យ", "success");
      } catch (e) {
@@ -551,6 +521,48 @@ export default function App() {
 
   return (
     <div className={`h-screen flex flex-col font-sans ${isDarkMode ? 'dark bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-800'} overflow-hidden`}>
+      <style>{`
+        /* Google Maps Autocomplete Clean UI */
+        .pac-container {
+          border-radius: 1rem;
+          border: none;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          margin-top: 8px;
+          font-family: inherit;
+          padding: 8px 0;
+          z-index: 9999 !important;
+        }
+        .pac-item {
+          padding: 10px 16px;
+          border-top: 1px solid #f3f4f6;
+          cursor: pointer;
+          font-size: 14px;
+        }
+        .pac-item:first-child {
+          border-top: none;
+        }
+        .pac-item:hover, .pac-item-selected {
+          background-color: #f3f4f6;
+        }
+        .pac-icon {
+          margin-top: 2px;
+        }
+        /* Dark Mode Support */
+        .dark .pac-container {
+          background-color: #1f2937;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .dark .pac-item {
+          border-top-color: #374151;
+          color: #d1d5db;
+        }
+        .dark .pac-item:hover, .dark .pac-item-selected {
+          background-color: #374151;
+        }
+        .dark .pac-item-query {
+          color: #f9fafb;
+        }
+      `}</style>
       
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm z-20 p-3 flex justify-between items-center relative transition-colors duration-300">
@@ -564,40 +576,22 @@ export default function App() {
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-1 text-gray-800 dark:text-white">📍 SmartMap</h1>
         </div>
 
-        <div className="flex-grow max-w-xs md:max-w-md mx-4 relative hidden sm:block" ref={searchDropdownRef}>
+        <div className="flex-grow max-w-xs md:max-w-md mx-4 relative hidden sm:block">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            {searchLoading ? <Loader2 className="h-5 w-5 text-blue-500 animate-spin" /> : <Search className="h-5 w-5 text-gray-400" />}
+            <Search className="h-5 w-5 text-gray-400" />
           </div>
           <input
+            ref={searchInputRef}
             type="text"
-            placeholder="ស្វែងរក ខេត្ត ស្រុក ភូមិ ឬទីតាំង..."
+            placeholder="ស្វែងរកទីតាំង ទូទាំងពិភពលោក..."
             value={searchQuery}
-            onChange={handleSearchInput}
-            onKeyDown={handleSearchKeyDown}
-            onFocus={() => { if(searchResults.length > 0) setIsSearching(true); }}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="block w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-full bg-gray-50 dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all dark:text-white text-gray-900"
           />
           {searchQuery && (
-            <button onClick={() => { setSearchQuery(''); setSearchResults([]); setIsSearching(false); }} className="absolute inset-y-0 right-0 pr-3 flex items-center">
+            <button onClick={() => { setSearchQuery(''); searchInputRef.current.value = ''; }} className="absolute inset-y-0 right-0 pr-3 flex items-center">
               <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
             </button>
-          )}
-
-          {/* ផ្ទាំងទម្លាក់ (Dropdown) បង្ហាញលទ្ធផលស្វែងរក */}
-          {isSearching && searchResults.length > 0 && (
-            <ul className="absolute z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto custom-scrollbar divide-y divide-gray-100 dark:divide-gray-700">
-              {searchResults.map((result, idx) => (
-                <li key={idx} onClick={() => handleSelectSearchResult(result)} className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors">
-                  <div className="bg-gray-100 dark:bg-gray-700 p-2 rounded-full shrink-0 mt-0.5">
-                      <MapPin className="w-4 h-4 text-blue-500" />
-                  </div>
-                  <div className="flex flex-col">
-                      <span className="font-bold text-sm text-gray-800 dark:text-gray-100">{result.name.split(',')[0]}</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">{result.name.substring(result.name.indexOf(',') + 1)}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
           )}
         </div>
         
@@ -698,7 +692,6 @@ export default function App() {
                           )}
                       </div>
 
-                      {/* បង្ហាញព័ត៌មានលម្អិត បើជាទិន្នន័យ Admin */}
                       {loc.isAdminData ? (
                           <div className="mt-2.5 bg-green-50 dark:bg-green-900/20 p-2.5 rounded-lg border border-green-100 dark:border-green-800">
                              <p className="text-[13px] text-gray-700 dark:text-gray-300 font-medium mb-1">តួនាទី: <span className="font-bold text-gray-900 dark:text-white">{loc.type}</span></p>
