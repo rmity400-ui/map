@@ -78,7 +78,7 @@ export default function App() {
   const infoWindowRef = useRef(null);
   const userMarkerRef = useRef(null);
   const isMapCenteredRef = useRef(false);
-  const watchIdRef = useRef(null); // Added for cleanup
+  const watchIdRef = useRef(null);
 
   useEffect(() => {
     document.title = "📍 SmartMap";
@@ -140,27 +140,6 @@ export default function App() {
     { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
   ];
 
-  useEffect(() => {
-    if (!document.getElementById('google-maps-script')) {
-      const script = document.createElement('script');
-      script.id = 'google-maps-script';
-      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyDcelrKRrV4GaPKftfT29JzuFsOuLk5CO8`;
-      script.async = true;
-      script.defer = true;
-      script.onload = initializeMap;
-      document.head.appendChild(script);
-    } else if (window.google && window.google.maps) {
-      initializeMap();
-    }
-
-    return () => {
-        // Cleanup GPS Watcher on unmount
-        if (watchIdRef.current && navigator.geolocation) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-        }
-    };
-  }, []);
-
   const fetchNearbyPOIs = async (lat, lng) => {
       setIsFetchingPois(true);
       try {
@@ -209,6 +188,27 @@ export default function App() {
       }
   };
 
+  useEffect(() => {
+    if (!document.getElementById('google-maps-script')) {
+      const script = document.createElement('script');
+      script.id = 'google-maps-script';
+      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyDcelrKRrV4GaPKftfT29JzuFsOuLk5CO8`;
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeMap;
+      document.head.appendChild(script);
+    } else if (window.google && window.google.maps) {
+      initializeMap();
+    }
+
+    return () => {
+        // Cleanup GPS Watcher on unmount
+        if (watchIdRef.current && navigator.geolocation) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+    };
+  }, []);
+
   const initializeMap = () => {
     if (!mapRef.current || !window.google || !window.google.maps) return;
     const initialMap = new window.google.maps.Map(mapRef.current, {
@@ -237,7 +237,6 @@ export default function App() {
              initialMap.setZoom(16);
              isMapCenteredRef.current = true;
           } else {
-             // Pan gently instead of harsh jumping
              initialMap.panTo(userPos);
           }
           
@@ -357,7 +356,6 @@ export default function App() {
       return `${dist.toFixed(1)} គ.ម`;
   };
 
-  // --- មុខងារស្វែងរកទីតាំងពិភពលោក (Global Map Search) ---
   const executeGlobalSearch = async (query) => {
     if (!query) return;
     setSearchLoading(true);
@@ -392,7 +390,6 @@ export default function App() {
       return;
     }
 
-    // រង់ចាំ 600ms ក្រោយឈប់វាយអក្សរ ទើបស្វែងរក (ការពារកុំឲ្យគាំង)
     searchTimeoutRef.current = setTimeout(() => {
       executeGlobalSearch(val.trim());
     }, 600);
@@ -410,12 +407,11 @@ export default function App() {
   };
 
   const handleSelectSearchResult = (result) => {
-    setSearchQuery(result.name.split(',')[0]); // ដាក់តែឈ្មោះខេត្ត/ស្រុក ក្នុងប្រអប់
+    setSearchQuery(result.name.split(',')[0]); 
     setIsSearching(false);
     setSearchResults([]);
     
     if(map && window.google) {
-      // Zoom ទៅកាន់ទីតាំងនោះអូតូ
       if (result.boundingbox) {
          const bounds = new window.google.maps.LatLngBounds(
             { lat: parseFloat(result.boundingbox[0]), lng: parseFloat(result.boundingbox[2]) },
@@ -427,7 +423,6 @@ export default function App() {
          map.setZoom(16);
       }
       
-      // ទម្លាក់ Pin បណ្ដោះអាសន្នបញ្ជាក់ទីតាំង
       const tempMarker = new window.google.maps.Marker({
           position: { lat: result.lat, lng: result.lng },
           map: map,
@@ -441,14 +436,12 @@ export default function App() {
       });
       tempInfoWindow.open(map, tempMarker);
 
-      // លុប Pin បណ្ដោះអាសន្នវិញក្រោយ ៨វិនាទី
       setTimeout(() => {
           tempMarker.setMap(null);
       }, 8000); 
     }
   };
   
-  // បិទផ្ទាំងបញ្ជីស្វែងរកពេលចុចចេញក្រៅ
   useEffect(() => {
     const handleClickOutside = (event) => {
         if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
@@ -464,7 +457,7 @@ export default function App() {
     const pos = { lat: loc.lat, lng: loc.lng };
     map.panTo(pos);
     map.setZoom(17);
-    if(window.innerWidth < 768) setIsSidebarOpen(false); // Close sidebar on mobile
+    if(window.innerWidth < 768) setIsSidebarOpen(false); 
 
     let actualMarker = markerObj || markers.find(m => m.id === loc.id)?.marker;
 
