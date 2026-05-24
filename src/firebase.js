@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBq_1YKH4Hf4M65qMHirvWCD_-tyqCDz5E",
+  apiKey: "XXX",
   authDomain: "ramit-7e364.firebaseapp.com",
   projectId: "ramit-7e364",
   storageBucket: "ramit-7e364.firebasestorage.app",
@@ -12,7 +12,6 @@ const firebaseConfig = {
   measurementId: "G-99Y1VSYHJG"
 };
 
-// Initialize Firebase
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
