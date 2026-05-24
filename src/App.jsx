@@ -206,7 +206,7 @@ export default function App() {
       const script = document.createElement('script');
       script.id = 'google-maps-script';
       // បន្ថែម libraries=places សម្រាប់ Autocomplete
-      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCYPYMqUNC3FYAuDoTBiJtCCzjZtQd7oCg&libraries=places`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCYPYMqUNC3FYAuDoTBiJtCCzjZtQd7oCg`;
       script.async = true;
       script.defer = true;
       script.onload = initializeMap;
